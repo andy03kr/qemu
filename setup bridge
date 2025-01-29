@@ -1,0 +1,37 @@
+# Create the bridge
+nmcli con add ifname br0 type bridge con-name br0
+# Not sure if the argument should be an ifname or conn name after master
+nmcli con add type bridge-slave ifname enp7s0 master br0
+
+# Disable STP (Spanning Tree Protocol)
+nmcli con mod br0 bridge.stp no
+
+# Down the physical interface
+nmcli con down enp7s0
+
+# By default address assign automatically
+# If need setup static IP addresses
+nmcli con mod br0 ipv4.addresses "$HOST_IP/24"
+nmcli con mod br0 ipv4.gateway "$ROUTER_GATEWAY_IP"
+nmcli con mod br0 ipv4.dns "$MAIN_DNS,$BACKUP_DNS1,$BACKUP_DNS2"
+
+# Set the connection to be manual (might want to use DHCP instead?)
+nmcli con mod br0 ipv4.method manual
+
+# set your search domain (not sure what the right approach is here)
+nmcli con mod br0 ipv4.dns-search 'example.com'
+nmcli con mod br0 ipv4.dns-search 'lan'
+nmcli con mod br0 ipv4.dns-search ''
+
+# Prevent the ethernet iface from automatically creating a new connection
+# otherwise, it will reset if the bridge goes down
+nmcli con mod enp7s0 connection.autoconnect no
+
+# Bring up the new bridge interaface
+nmcli con up br0
+
+# Show changes
+nmcli device show
+
+# Restart the service
+sudo systemctl restart NetworkManager.service
