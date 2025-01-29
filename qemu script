@@ -1,0 +1,46 @@
+#!/usr/bin/bash
+
+VMHOME="/home/user/virtual_machines"
+IMAGES="/mnt/data0/images"
+DVD="ubuntu-20.04.5-live-server-amd64.iso"
+#DVD="ubuntu-22.04.1-live-server-amd64.iso"
+WHICH="/usr/bin/which"
+
+SUDO=`$WHICH sudo`
+IP=`$WHICH ip`
+SHUF=`$WHICH shuf`
+QEMUKVM=`$WHICH qemu-kvm`
+BASENAME=`$WHICH basename`
+DISK=`$BASENAME "$0" .sh`
+NUM=0
+
+if [[ ! -f "$VMHOME/$DISK.qcow" ]]
+then
+  echo "disk $VMHOME/$DISK.qcow not found"
+  echo "create disk:"
+  echo "qemu-img create -f qcow2 $VMHOME/$DISK.qcow 50G"
+  exit
+fi
+
+while [[ -d "/sys/class/net/tap$NUM" ]]
+do
+  NUM=`$SHUF -i 0-9 -n1`
+done
+
+$SUDO $IP tuntap add dev tap$NUM mode tap user $(whoami)
+$SUDO $IP link set tap$NUM master br0
+$SUDO $IP link set dev tap$NUM up
+MAC=$NUM
+
+$QEMUKVM -cpu host \
+        -smp 4 \
+        -m 4G \
+        -enable-kvm \
+        -cdrom $IMAGES/$DVD \
+        -hda $VMHOME/$DISK.qcow \
+        -device virtio-net,netdev=network0,mac=52:55:00:d1:55:0$MAC \
+        -netdev tap,id=network0,ifname=tap$NUM,script=no,downscript=no \
+        -boot c \
+        -rtc base=localtime
+
+$SUDO $IP tuntap del dev tap$NUM mode tap
