@@ -35,3 +35,7 @@ nmcli device show
 
 # Restart the service
 sudo systemctl restart NetworkManager.service
+
+then
+cat /etc/qemu/bridge.conf 
+allow br0
