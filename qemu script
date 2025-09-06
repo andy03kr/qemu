@@ -1,27 +1,50 @@
 #!/usr/bin/bash
 
-VMHOME="/home/user/virtual_machines"
+VMHOME="/home/andrey/virtual_machines"
 IMAGES="/mnt/data0/images/"
 WHICH="/usr/bin/which"
 
 SUDO=`$WHICH sudo`
+IP=`$WHICH ip`
+BRCTL=`$WHICH brctl`
+SHUF=`$WHICH shuf`
 QEMU=`$WHICH qemu-system-x86_64`
+QEMUIMG=`$WHICH qemu-img`
 BASENAME=`$WHICH basename`
 DISK=`$BASENAME "$0" .sh`
+NUM=0
 
 if [[ ! -f "$VMHOME/$DISK.qcow2" ]]
 then
+  echo "=================================="
   echo "disk $VMHOME/$DISK.qcow2 not found"
-  echo "create disk:"
-  echo "qemu-img create -f qcow2 $VMHOME/$DISK.qcow2 50G"
-  exit
+  echo "=================================="
+  read -p "Create $VMHOME/$DISK.qcow2? [Yes/No]" YN
+
+  case $YN in
+    [Yy]* ) $QEMUIMG create -f qcow2 $VMHOME/$DISK.qcow2 50G;;
+    [Nn]* ) echo "Aborting..."; exit;;
+    * ) echo "Invalid input. Aborting..."; exit 1;;
+  esac
 fi
 
-OSDISK="ubuntu-24.04.3-live-server-amd64.iso"
-DEFARG="-cpu host -smp 8 -enable-kvm -m 16G -boot c -rtc base=localtime"
+while [[ -d "/sys/class/net/tap$NUM" ]]
+do
+  NUM=`$SHUF -i 0-9 -n1`
+done
 
+$SUDO $IP tuntap add mode tap user $(whoami) tap$NUM
+$SUDO $IP link set tap$NUM up promisc on
+$SUDO $BRCTL addif br0 tap$NUM
+MAC=$NUM
+
+DEFARG="-cpu host -smp 1 -enable-kvm -m 1G -boot c -rtc base=localtime"
 HDD="-drive file=$VMHOME/$DISK.qcow2,if=virtio"
-CDROM="-drive file=$IMAGES/$OSDISK,media=cdrom"
-NETWORK="-device e1000,netdev=network0 -netdev bridge,id=network0"
+CDROM="-drive file=$IMAGES/ubuntu-24.04.3-live-server-amd64.iso,media=cdrom"
+NETWORK="-device virtio-net,netdev=network0,mac=52:55:00:d1:55:0$MAC -netdev tap,id=network0,ifname=tap$NUM,script=no,downscript=no"
 
 $QEMU $DEFARG $HDD $CDROM $NETWORK
+
+$SUDO $IP link set tap$NUM down
+$SUDO $BRCTL delif br0 tap$NUM
+$SUDO $IP link delete dev tap$NUM
