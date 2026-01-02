@@ -1,50 +1,55 @@
 #!/usr/bin/bash
 
-VMHOME="/home/andrey/virtual_machines"
+# file name must be like 0-virtual-machine.sh
+# where:
+# 0 - machine number and interface name and MAC-address and (posible) IP address if use DHCP service
+# virtual-machine - any machine name
+
+VMHOME="/home/andrey/Virtual.Machines"
 IMAGES="/mnt/data0/images/"
 WHICH="/usr/bin/which"
 
 SUDO=`$WHICH sudo`
 IP=`$WHICH ip`
-BRCTL=`$WHICH brctl`
-SHUF=`$WHICH shuf`
+AWK=`$WHICH awk`
 QEMU=`$WHICH qemu-system-x86_64`
 QEMUIMG=`$WHICH qemu-img`
 BASENAME=`$WHICH basename`
 DISK=`$BASENAME "$0" .sh`
-NUM=0
+IFBR0="br0"
+TAPNUM=$($BASENAME "$0" .sh | $AWK -F"-" '{print $1}')
+
+if [[ "$TAPNUM" -lt "0" || "$TAPNUM" -gt "9" ]]
+then
+  echo "Wrong machine number"
+  exit
+fi
 
 if [[ ! -f "$VMHOME/$DISK.qcow2" ]]
 then
   echo "=================================="
   echo "disk $VMHOME/$DISK.qcow2 not found"
   echo "=================================="
-  read -p "Create $VMHOME/$DISK.qcow2? [Yes/No]" YN
+  read -p "Create $VMHOME/$DISK.qcow2? [Y/n]" YN
 
   case $YN in
-    [Yy]* ) $QEMUIMG create -f qcow2 $VMHOME/$DISK.qcow2 50G;;
-    [Nn]* ) echo "Aborting..."; exit;;
-    * ) echo "Invalid input. Aborting..."; exit 1;;
+    [Yy]*|"" ) $QEMUIMG create -f qcow2 $VMHOME/$DISK.qcow2 50G;;
+    [Nn]*    ) echo "Aborting..."; exit;;
+    *        ) echo "Invalid input. Aborting..."; exit 1;;
   esac
 fi
 
-while [[ -d "/sys/class/net/tap$NUM" ]]
-do
-  NUM=`$SHUF -i 0-9 -n1`
-done
+$SUDO $IP tuntap add mode tap user $(whoami) tap10$TAPNUM
+$SUDO $IP link set tap10$TAPNUM up promisc on
+$SUDO $IP link set dev tap10$TAPNUM master $IFBR0
 
-$SUDO $IP tuntap add mode tap user $(whoami) tap$NUM
-$SUDO $IP link set tap$NUM up promisc on
-$SUDO $BRCTL addif br0 tap$NUM
-MAC=$NUM
-
-DEFARG="-cpu host -smp 1 -enable-kvm -m 1G -boot c -rtc base=localtime"
+DEFARG="-cpu host -smp 8 -enable-kvm -m 16G -boot c -rtc base=localtime -name $($BASENAME "$0" .sh)"
 HDD="-drive file=$VMHOME/$DISK.qcow2,if=virtio"
 CDROM="-drive file=$IMAGES/ubuntu-24.04.3-live-server-amd64.iso,media=cdrom"
-NETWORK="-device virtio-net,netdev=network0,mac=52:55:00:d1:55:0$MAC -netdev tap,id=network0,ifname=tap$NUM,script=no,downscript=no"
+NETWORK="-device virtio-net,netdev=network0,mac=52:55:00:d1:55:0$TAPNUM -netdev tap,id=network0,ifname=tap10$TAPNUM,script=no,downscript=no"
 
 $QEMU $DEFARG $HDD $CDROM $NETWORK
 
-$SUDO $IP link set tap$NUM down
-$SUDO $BRCTL delif br0 tap$NUM
-$SUDO $IP link delete dev tap$NUM
+$SUDO $IP link set dev tap10$TAPNUM nomaster
+$SUDO $IP link set tap10$TAPNUM down
+$SUDO $IP tuntap del name tap10$TAPNUM mode tap
