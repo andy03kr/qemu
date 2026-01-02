@@ -39,6 +39,7 @@ then
   esac
 fi
 
+# machine address and MAC and tap interfaces name start from 10x
 $SUDO $IP tuntap add mode tap user $(whoami) tap10$TAPNUM
 $SUDO $IP link set tap10$TAPNUM up promisc on
 $SUDO $IP link set dev tap10$TAPNUM master $IFBR0
